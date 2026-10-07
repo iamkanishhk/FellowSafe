@@ -384,7 +384,9 @@ Consequences, all designed for above:
 
 **Neon free tier.** `pg.Pool` with `max: 5` against the pooled connection string. `@neondatabase/serverless` is deliberately dropped: Neon speaks the standard Postgres wire protocol, so one client stack is enough, and the resolve path (status + purge) wants a real transaction. Compute auto-suspend is covered by the same traffic that covers Render.
 
-**Configuration.** All secrets in Render env vars, never in the repo: `DATABASE_URL`, `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `FIREBASE_SERVICE_ACCOUNT`, `NODE_ENV`. Zod-validated at boot so a missing value fails at deploy, not mid-demo.
+**Configuration.** All secrets in Render env vars, never in the repo: `DATABASE_URL`, `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_KEY`, `FIREBASE_SERVICE_ACCOUNT`, `DEFAULT_CALLING_CODE`, `NODE_ENV`. Zod-validated at boot so a missing value fails at deploy, not mid-demo.
+
+> **`CLERK_PUBLISHABLE_KEY` is required, not optional.** It is not a secret — it ships in client code by design — but the server still needs it. `clerkMiddleware` uses it to resolve this instance's frontend API, which is the origin of the authorised parties that `CLERK_JWT_KEY` is validated against. Omitting it does **not** degrade to a rejected token: Clerk throws while constructing the middleware, so every authenticated route answers `500` with `Publishable key is missing`. Keeping it in the Zod schema turns that into a boot-time failure with a named field, which is the entire point of validating config at startup. Found the hard way — verified by starting the server and probing the route.
 
 ## 12. Testing
 

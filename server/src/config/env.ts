@@ -24,8 +24,15 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(8080),
   DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'must be a postgres connection string'),
   CLERK_SECRET_KEY: z.string().min(1),
+  CLERK_PUBLISHABLE_KEY: z
+    .string()
+    .regex(/^pk_(test|live)_/, 'must be a Clerk publishable key (pk_test_… / pk_live_…)'),
   CLERK_JWT_KEY: z.string().min(1),
   FIREBASE_SERVICE_ACCOUNT: serviceAccount,
+  DEFAULT_CALLING_CODE: z
+    .string()
+    .regex(/^[1-9]\d{0,2}$/, 'must be a country calling code, digits only, no + or 00')
+    .default('91'),
 });
 
 const result = schema.safeParse(process.env);
