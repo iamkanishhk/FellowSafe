@@ -1,10 +1,22 @@
-import React, { useState, useRef } from "react";
-import { Text, View, StyleSheet, Pressable, Animated, Easing, Platform } from "react-native";
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import {
+  Text,
+  View,
+  StyleSheet,
+  Pressable,
+  Animated,
+  Easing,
+  Platform,
+  Alert,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import Navbar from "../components/Navbar";
 import Svg, { Circle } from "react-native-svg";
+import { useCurrentUser } from "../lib/user-context";
+import { useApi } from "../lib/api";
+import { isOnboardingComplete } from "../lib/permissions";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -21,9 +33,56 @@ const HOLD_DURATION = 1000; // 1 second match for delayLongPress
 const BUTTON_RADIUS = 110;
 const CIRCUMFERENCE = 2 * Math.PI * BUTTON_RADIUS;
 
+function greetingForHour(hour: number) {
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function Home() {
   const [holding, setHolding] = useState(false);
+  const [starting, setStarting] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const { fullName, firstName, email, phone } = useCurrentUser();
+  const { createSos } = useApi();
+
+  // Safety net: the dashboard is unreachable until permissions onboarding is
+  // done, so a stale or deep-linked entry bounces back to the gate.
+  useEffect(() => {
+    let active = true;
+    void isOnboardingComplete().then((done) => {
+      if (active && !done) router.replace("/permissions");
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleActivate = useCallback(() => {
+    if (starting) return;
+    setStarting(true);
+    createSos()
+      .then((sos) => {
+        router.push({
+          pathname: "/alarm",
+          params: { sosId: sos.sosId, startedAt: sos.startedAt },
+        });
+      })
+      .catch(() => {
+        Alert.alert(
+          "Couldn't activate the alarm",
+          "Check your connection and try again.",
+        );
+      })
+      .finally(() => {
+        setStarting(false);
+      });
+  }, [createSos, starting]);
+
+  // Phone is only known once the profile has synced; fall back to email so the
+  // second line is never empty for a signed-in user.
+  const secondary = email ?? phone ?? null;
+  const secondaryIcon = email ? "✉️" : "📱";
 
   const handlePressIn = () => {
     setHolding(true);
@@ -47,16 +106,19 @@ export default function Home() {
   };
 
   // Interpolations for Progress & Pulse Effect
+  // eslint-disable-next-line react-hooks/refs -- Animated.Value#interpolate is the supported RN pattern
   const strokeDashoffset = progressAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [CIRCUMFERENCE, 0],
   });
 
+  // eslint-disable-next-line react-hooks/refs -- Animated.Value#interpolate is the supported RN pattern
   const pulseScale = progressAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 1.25],
   });
 
+  // eslint-disable-next-line react-hooks/refs -- Animated.Value#interpolate is the supported RN pattern
   const pulseOpacity = progressAnim.interpolate({
     inputRange: [0, 0.2, 1],
     outputRange: [0.3, 0.6, 0.15],
@@ -69,11 +131,18 @@ export default function Home() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTextContainer}>
-          <Text style={styles.greeting}>Good evening, Alex</Text>
-          <View style={styles.locRow}>
-            <Text style={styles.locPin}>📍</Text>
-            <Text style={styles.locText}>Bengaluru, Karnataka</Text>
-          </View>
+          <Text style={styles.greeting}>
+            {greetingForHour(new Date().getHours())},{" "}
+            {firstName || fullName}
+          </Text>
+          {secondary ? (
+            <View style={styles.locRow}>
+              <Text style={styles.locPin}>{secondaryIcon}</Text>
+              <Text style={styles.locText} numberOfLines={1}>
+                {secondary}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -123,11 +192,9 @@ export default function Home() {
           <Pressable
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
-            onLongPress={() => {
-              setHolding(false);
-              router.push("/alarm");
-            }}
+            onLongPress={handleActivate}
             delayLongPress={HOLD_DURATION}
+            disabled={starting}
             accessibilityRole="button"
             accessibilityLabel="Activate alarm. Press and hold for 1 second to activate."
             style={({ pressed }) => [
@@ -203,6 +270,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: TEXT_SECONDARY,
     fontWeight: "500",
+    flexShrink: 1,
   },
   avatar: {
     width: 44,

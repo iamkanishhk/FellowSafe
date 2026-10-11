@@ -1,8 +1,17 @@
 import { useState } from "react";
-import { Text, View, StyleSheet, Pressable, TextInput } from "react-native";
+import {
+  ActivityIndicator,
+  Text,
+  View,
+  StyleSheet,
+  Pressable,
+  TextInput,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
+import { ApiError, useApi } from "../lib/api";
+import { useCurrentUser } from "../lib/user-context";
 
 const BLUE = "#2E7CF6";
 const NAVY = "#13203A";
@@ -56,11 +65,38 @@ function formatIndian(num: string) {
 }
 
 export default function PhoneSetup() {
-  const [phone, setPhone] = useState("9876543210");
+  const [phone, setPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { savePhone } = useApi();
+  const { updatePhone } = useCurrentUser();
 
   const pushDigit = (d: string) =>
     setPhone((p) => (p.replace(/\D/g, "").length >= 10 ? p : p + d));
   const backspace = () => setPhone((p) => p.slice(0, -1));
+
+  const onContinue = async () => {
+    const digits = phone.replace(/\D/g, "").slice(0, 10);
+    if (digits.length !== 10) {
+      setError("Enter a valid 10-digit phone number.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await savePhone(`+91${digits}`);
+      updatePhone(saved.phoneE164);
+      router.replace("/permissions");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError("This number is already linked to another account.");
+      } else {
+        setError("Couldn't save your number. Check your connection.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -75,9 +111,9 @@ export default function PhoneSetup() {
         <Text style={styles.backArrow}>←</Text>
       </Pressable>
 
-      <Text style={styles.title}>Let’s get you set up.</Text>
+      <Text style={styles.title}>Add your number.</Text>
       <Text style={styles.subtitle}>
-        Enter your phone number to create{"\n"}your Fellow Safe account.
+        We’ll use it so the people you trust{"\n"}can reach you when it matters.
       </Text>
 
       {/* country selector */}
@@ -104,12 +140,19 @@ export default function PhoneSetup() {
         />
       </View>
 
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
       <Pressable
-        style={styles.primaryBtn}
+        style={[styles.primaryBtn, saving && styles.primaryBtnDisabled]}
         accessibilityRole="button"
-        onPress={() => router.push("/setup")}
+        disabled={saving}
+        onPress={onContinue}
       >
-        <Text style={styles.primaryBtnText}>Continue</Text>
+        {saving ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <Text style={styles.primaryBtnText}>Continue</Text>
+        )}
       </Pressable>
 
       <View style={styles.secureRow}>
@@ -272,6 +315,15 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
+  },
+  primaryBtnDisabled: {
+    opacity: 0.7,
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: "#E5484D",
+    fontWeight: "600",
   },
   primaryBtnText: {
     color: "#FFFFFF",

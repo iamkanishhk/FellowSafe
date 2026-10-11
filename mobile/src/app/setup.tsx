@@ -223,13 +223,13 @@ function ContactStep({ onBackTo }: { onBackTo: () => void }) {
       </ScrollView>
 
       <View style={styles.bottomRow}>
-        <Pressable hitSlop={12} onPress={() => router.push("/home")}>
+        <Pressable hitSlop={12} onPress={() => router.push("/permissions")}>
           <Text style={styles.skipText}>Skip</Text>
         </Pressable>
         <Pressable
           style={styles.fab}
           accessibilityRole="button"
-          onPress={() => router.push("/home")}
+          onPress={() => router.push("/permissions")}
         >
           <Text style={styles.fabArrow}>→</Text>
         </Pressable>

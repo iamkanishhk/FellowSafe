@@ -25,6 +25,11 @@ export interface LinkedContact {
  * the *primary* phone is verified: an unverified number must never be able to
  * claim the `users_phone_e164_key` index, or it would squat the one identifier
  * auto-link matches on.
+ *
+ * With Google sign-in the Clerk user usually has no phone at all, and the app
+ * captures one via `setUserPhone`. The conflict branch therefore only overwrites
+ * `phone_e164` when Clerk actually supplies a verified phone, so a sync never
+ * erases a number the user entered in-app.
  */
 export async function upsertUserFromClerk(
   clerkUser: ClerkUserSnapshot,
@@ -49,8 +54,11 @@ export async function upsertUserFromClerk(
      values ($1, $2, $3, case when $3::text is null then null else now() end, $4)
      on conflict (clerk_user_id) do update
        set name = excluded.name,
-           phone_e164 = excluded.phone_e164,
-           phone_verified_at = excluded.phone_verified_at,
+           phone_e164 = coalesce(excluded.phone_e164, users.phone_e164),
+           phone_verified_at = case
+             when excluded.phone_e164 is null then users.phone_verified_at
+             else excluded.phone_verified_at
+           end,
            email = excluded.email,
            updated_at = now()
      returning *`,
@@ -64,6 +72,24 @@ export async function upsertUserFromClerk(
 
 export async function findUserByClerkId(clerkUserId: string): Promise<UserRow | null> {
   const { rows } = await pool.query<UserRow>('select * from users where clerk_user_id = $1', [clerkUserId]);
+  return rows[0] ?? null;
+}
+
+/**
+ * Stores a phone number captured in the app after Google sign-in. Deliberately
+ * does not touch `phone_verified_at`: the number is unverified, so it must stay
+ * out of the verified-phone gate and out of auto-link until a real verification
+ * path sets `phone_verified_at`. A collision on `users_phone_e164_key` surfaces
+ * as a 409 from the pg error mapper.
+ */
+export async function setUserPhone(clerkUserId: string, phoneE164: string): Promise<UserRow | null> {
+  const { rows } = await pool.query<UserRow>(
+    `update users
+        set phone_e164 = $2, updated_at = now()
+      where clerk_user_id = $1
+      returning *`,
+    [clerkUserId, phoneE164],
+  );
   return rows[0] ?? null;
 }
 

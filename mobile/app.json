@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.iam.kanishk.mobile"
+      "package": "com.iam.kanishk.mobile",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -26,6 +27,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-secure-store",
       [
         "expo-splash-screen",
         {
@@ -33,7 +35,22 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Fellow Safe uses your contacts to show trusted contacts who are already on the app."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Fellow Safe shares your location with your trusted contacts when you raise an alarm."
+        }
+      ],
+      "expo-notifications",
+      "./plugins/withFullScreenIntent",
+      "@clerk/expo"
     ],
     "experiments": {
       "typedRoutes": true,

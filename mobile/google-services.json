@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "713981070640",
+    "project_id": "fellowsafe-2777d",
+    "storage_bucket": "fellowsafe-2777d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713981070640:android:2822b29e40c9e5f35e8cf5",
+        "android_client_info": {
+          "package_name": "com.iam.kanishk.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBLPXAqZXQBGafMZnSJiGAg-IcPb2g4cVA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

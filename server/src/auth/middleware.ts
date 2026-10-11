@@ -68,3 +68,16 @@ export async function loadUser(req: Request, _res: Response, next: NextFunction)
     next(err);
   }
 }
+
+/**
+ * Route guard for identity-dependent writes. `loadUser` resolves the local row
+ * when it exists; its absence means the client has not called `/auth/sync` yet,
+ * which is the one thing every such write depends on.
+ */
+export function requireSyncedUser(req: Request): UserRow {
+  const user = req.fellowSafeUser;
+  if (!user) {
+    throw HttpError.unauthorized('USER_NOT_SYNCED', 'call /auth/sync before using this feature');
+  }
+  return user;
+}

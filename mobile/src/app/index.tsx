@@ -1,9 +1,49 @@
-import { Text, View, StyleSheet, Pressable,Image } from "react-native";
+import { useEffect } from "react";
+import { ActivityIndicator, Text, View, StyleSheet, Pressable,Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
+import { useAuth } from "@clerk/expo";
+import { useApi } from "../lib/api";
+import { isOnboardingComplete } from "../lib/permissions";
 
 export default function Onboarding() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { syncUser } = useApi();
+
+  // A returning, already-signed-in user should skip onboarding. Sync first so
+  // we know whether their phone was captured and permissions granted.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { user } = await syncUser();
+        const complete = await isOnboardingComplete();
+        if (cancelled) return;
+        if (!user.phoneE164) router.replace("/phone");
+        else if (!complete) router.replace("/permissions");
+        else router.replace("/home");
+      } catch {
+        if (!cancelled) router.replace("/home");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, syncUser]);
+
+  if (isLoaded && isSignedIn) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+        <StatusBar style="dark" />
+        <View style={styles.restoring}>
+          <ActivityIndicator color={BLUE} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <StatusBar style="dark" />
@@ -27,11 +67,15 @@ export default function Onboarding() {
         <Pressable
           style={styles.primaryBtn}
           accessibilityRole="button"
-          onPress={() => router.push("/phone")}
+          onPress={() => router.push("/sign-in")}
         >
           <Text style={styles.primaryBtnText}>Get Started</Text>
         </Pressable>
-        <Pressable accessibilityRole="link" hitSlop={12}>
+        <Pressable
+          accessibilityRole="link"
+          hitSlop={12}
+          onPress={() => router.push("/sign-in")}
+        >
           <Text style={styles.linkText}>I already have an account</Text>
         </Pressable>
       </View>
@@ -48,6 +92,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 24,
+  },
+  restoring: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
   illusWrap: {
     height: 352,

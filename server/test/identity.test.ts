@@ -29,7 +29,7 @@ describe('identity sync and auto-link', () => {
       `insert into users (clerk_user_id, name) values ($1, 'Stranger') returning id`,
       [`${stamp}_stranger`],
     );
-    createdUserIds.push(rows[0].id);
+    createdUserIds.push(rows[0]!.id);
   });
 
   after(async () => {
@@ -111,19 +111,19 @@ describe('identity sync and auto-link', () => {
     const linked = await autoLinkContactsForPhone(owner);
     const linkedIds = linked.map((c) => c.id);
 
-    assert.deepEqual(linkedIds, [match.rows[0].id], 'only the PENDING match links');
-    assert.ok(!linkedIds.includes(removed.rows[0].id), 'REMOVED contact must never re-link');
-    assert.ok(!linkedIds.includes(selfContact.rows[0].id), 'must not treat one phone as two identities twice');
+    assert.deepEqual(linkedIds, [match.rows[0]!.id], 'only the PENDING match links');
+    assert.ok(!linkedIds.includes(removed.rows[0]!.id), 'REMOVED contact must never re-link');
+    assert.ok(!linkedIds.includes(selfContact.rows[0]!.id), 'must not treat one phone as two identities twice');
 
     const again = await autoLinkContactsForPhone(owner);
     assert.equal(again.length, 0, 'auto-link is idempotent by construction');
 
     const { rows } = await pool.query<{ status: string; linked_user_id: string | null }>(
       `select status, linked_user_id from trusted_contacts where id = $1`,
-      [match.rows[0].id],
+      [match.rows[0]!.id],
     );
-    assert.equal(rows[0].status, 'LINKED');
-    assert.equal(rows[0].linked_user_id, owner.id);
+    assert.equal(rows[0]!.status, 'LINKED');
+    assert.equal(rows[0]!.linked_user_id, owner.id);
   });
 
   it('does not auto-link when the incoming user is unverified', async () => {
@@ -144,8 +144,8 @@ describe('identity sync and auto-link', () => {
 
     const { rows } = await pool.query<{ status: string }>(
       'select status from trusted_contacts where id = $1',
-      [pending.rows[0].id],
+      [pending.rows[0]!.id],
     );
-    assert.equal(rows[0].status, 'PENDING', 'contact must be left untouched');
+    assert.equal(rows[0]!.status, 'PENDING', 'contact must be left untouched');
   });
 });

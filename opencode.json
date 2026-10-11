@@ -11,7 +11,7 @@
       "url": "https://mcp.neon.tech/mcp",
       "enabled": true
     },
-     "clerk": {
+    "clerk": {
       "type": "remote",
       "url": "https://mcp.clerk.com/mcp",
       "enabled": true
@@ -21,13 +21,13 @@
       "url": "https://api.telnyx.com/v2/mcp",
       "enabled": true
     },
-     "better-auth": {
+    "better-auth": {
       "type": "remote",
       "url": "https://mcp.better-auth.com/mcp",
       "enabled": true
     }
   },
-   "permission": {
+  "permission": {
     "read": {
       "C:/Users/kanis/Documents/RemindMe/.opencode/get-shit-done/*": "allow"
     },

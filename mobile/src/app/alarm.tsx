@@ -1,8 +1,15 @@
-import { useEffect, useState } from "react";
-import { Text, View, StyleSheet, Pressable } from "react-native";
+import { useEffect, useState, useCallback } from "react";
+import {
+  Text,
+  View,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { useApi } from "../lib/api";
 
 const RED = "#E84444";
 const RED_BRIGHT = "#F25555";
@@ -15,23 +22,46 @@ function formatTime(total: number) {
 
 export default function AlarmActivated() {
   const [remaining, setRemaining] = useState(45);
+  const [cancelling, setCancelling] = useState(false);
+  const { sosId } = useLocalSearchParams<{ sosId?: string; startedAt?: string }>();
+  const { resolveSos } = useApi();
 
   useEffect(() => {
     const id = setInterval(
       () => setRemaining((r) => (r > 0 ? r - 1 : 0)),
-      1000
+      1000,
     );
     return () => clearInterval(id);
   }, []);
+
+  const handleCancel = useCallback(() => {
+    if (cancelling) return;
+    setCancelling(true);
+    const finish = () => router.replace("/home");
+    if (!sosId) {
+      finish();
+      return;
+    }
+    resolveSos(sosId)
+      .catch(() => {})
+      .finally(finish);
+  }, [cancelling, sosId, resolveSos]);
+
+  const handleClose = useCallback(() => {
+    if (cancelling) return;
+    router.back();
+  }, [cancelling]);
 
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
       <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={handleClose}
           hitSlop={12}
           style={styles.closeBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
         >
           <Text style={styles.closeX}>✕</Text>
         </Pressable>
@@ -60,13 +90,21 @@ export default function AlarmActivated() {
 
         <Pressable
           style={styles.cancelBtn}
-          onPress={() => router.push("/home")}
+          onPress={handleCancel}
+          disabled={cancelling}
           accessibilityRole="button"
+          accessibilityLabel="Cancel alarm"
         >
           <View style={styles.cancelIcon}>
-            <Text style={styles.cancelGlyph}>✕</Text>
+            {cancelling ? (
+              <ActivityIndicator size="small" color={RED} />
+            ) : (
+              <Text style={styles.cancelGlyph}>✕</Text>
+            )}
           </View>
-          <Text style={styles.cancelText}>Cancel Alarm</Text>
+          <Text style={styles.cancelText}>
+            {cancelling ? "Cancelling..." : "Cancel Alarm"}
+          </Text>
         </Pressable>
 
         <Pressable
@@ -201,12 +239,13 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   cancelIcon: {
-    width: 22,
+    minWidth: 22,
     height: 22,
     borderRadius: 11,
     backgroundColor: "rgba(255,255,255,0.9)",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 2,
   },
   cancelGlyph: {
     fontSize: 12,
