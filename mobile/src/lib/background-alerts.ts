@@ -45,7 +45,9 @@ export function readAlert(payload: unknown): AlertMessage | null {
   const data = asRecord(outer.data);
   if (!data) return null;
 
-  const kind = asString(data.type);
+  // The FCM push carries the kind under `type`; a notifee notification we
+  // rendered ourselves stores it under `kind`. Accept either.
+  const kind = asString(data.type) ?? asString(data.kind);
   const sosId = asString(data.sosId);
   if (kind !== "SOS" && kind !== "SOS_RESOLVED" && kind !== "RESPONSE") {
     return null;
@@ -110,6 +112,24 @@ export async function displayAlert(alert: AlertMessage): Promise<void> {
       ...(isSos ? { fullScreenAction: { id: "default" } } : {}),
     },
   });
+}
+
+/**
+ * The SOS alert currently shown in the tray, if any. Used to route the app to
+ * the dedicated alert screen when it is opened (or brought to the foreground)
+ * by a full-screen intent, instead of landing on the dashboard.
+ */
+export async function getDisplayedAlert(): Promise<AlertMessage | null> {
+  try {
+    const displayed = await notifee.getDisplayedNotifications();
+    for (const item of displayed) {
+      const alert = readAlert({ data: item.notification.data });
+      if (alert && alert.kind === "SOS") return alert;
+    }
+  } catch {
+    // notifee not ready (e.g. web) — no alert routing.
+  }
+  return null;
 }
 
 function openAlert(sosId: unknown): void {

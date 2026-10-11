@@ -1,19 +1,42 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View, StyleSheet, Pressable,Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useAuth } from "@clerk/expo";
 import { useApi } from "../lib/api";
 import { isOnboardingComplete } from "../lib/permissions";
+import { getDisplayedAlert, type AlertMessage } from "../lib/background-alerts";
 
 export default function Onboarding() {
   const { isLoaded, isSignedIn } = useAuth();
   const { syncUser } = useApi();
+  const [alert, setAlert] = useState<AlertMessage | null | undefined>(undefined);
+
+  // If the app was opened by a full-screen SOS alert, resolve that first so we
+  // can jump straight to the alert screen — before the app renders behind it.
+  useEffect(() => {
+    let cancelled = false;
+    console.log("[IA] index mount, calling getDisplayedAlert");
+    getDisplayedAlert()
+      .then((found) => {
+        console.log("[IA] index getDisplayedAlert ->", JSON.stringify(found));
+        if (!cancelled) setAlert(found);
+      })
+      .catch((e) => {
+        console.log("[IA] index getDisplayedAlert error", String(e));
+        if (!cancelled) setAlert(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // A returning, already-signed-in user should skip onboarding. Sync first so
-  // we know whether their phone was captured and permissions granted.
+  // we know whether their phone was captured and permissions granted. Only runs
+  // once we know there is no pending alert.
   useEffect(() => {
+    if (alert !== null) return;
     if (!isLoaded || !isSignedIn) return;
     let cancelled = false;
     (async () => {
@@ -31,7 +54,29 @@ export default function Onboarding() {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, syncUser]);
+  }, [alert, isLoaded, isSignedIn, syncUser]);
+
+  // Pending alert: show it instead of the dashboard.
+  if (alert) {
+    return (
+      <Redirect
+        href={{
+          pathname: "/incoming-alert",
+          params: { sosId: alert.sosId, userName: alert.userName },
+        }}
+      />
+    );
+  }
+
+  // Still resolving whether an alert is showing — render a bare screen so the
+  // dashboard/onboarding never flashes before the alert screen.
+  if (alert === undefined) {
+    return (
+      <View style={styles.container}>
+        <StatusBar style="dark" />
+      </View>
+    );
+  }
 
   if (isLoaded && isSignedIn) {
     return (
