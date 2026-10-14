@@ -69,6 +69,7 @@ function authToken(socket: Socket): string | null {
  */
 export function attachRealtime(httpServer: HttpServer): Server {
   const server = new Server(httpServer, { cors: { origin: false } });
+  io = server;
 
   server.use(async (socket, next) => {
     const token = authToken(socket);

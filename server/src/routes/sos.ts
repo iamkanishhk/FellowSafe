@@ -23,11 +23,14 @@ const createBodySchema = z.object({
 const locationBodySchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  accuracy: z.number().nonnegative().optional(),
-  speed: z.number().optional(),
-  heading: z.number().min(0).max(360).optional(),
-  battery: z.number().int().min(0).max(100).optional(),
-  recordedAt: z.string().min(1).optional(),
+  // The location task reports unavailable sensors (heading/speed/accuracy) and a
+  // not-yet-read battery as `null`, and `LocationInput` stores `number | null`,
+  // so these must accept null as well as an omitted key.
+  accuracy: z.number().nonnegative().nullish(),
+  speed: z.number().nullish(),
+  heading: z.number().min(0).max(360).nullish(),
+  battery: z.number().int().min(0).max(100).nullish(),
+  recordedAt: z.string().min(1).nullish(),
 });
 
 /** Device clocks lie; a bad timestamp falls back to server time rather than 500. */
@@ -225,7 +228,7 @@ export function sosRouter(): Router {
         speed: parsed.data.speed ?? null,
         heading: parsed.data.heading ?? null,
         battery: parsed.data.battery ?? null,
-        recordedAt: coerceRecordedAt(parsed.data.recordedAt),
+        recordedAt: coerceRecordedAt(parsed.data.recordedAt ?? undefined),
       };
 
       const session = await recordLocation(user.id, sosId, point);

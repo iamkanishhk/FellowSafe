@@ -1,0 +1,8 @@
+env: load .env
+env: export EXPO_PUBLIC_API_URL EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+Starting project at C:\Users\kanis\Documents\FellowSafe\mobile
+Logs: C:\Users\kanis\Documents\FellowSafe\mobile\.expo\dev\logs\start.log
+✅ Clerk iOS plugin loaded
+✅ Clerk Android plugin loaded
+› Port 8081 is being used by another process
+› Skipping dev server

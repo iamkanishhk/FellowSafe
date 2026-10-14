@@ -54,21 +54,24 @@ export async function postLocation(
   point: SosLocationPoint,
 ): Promise<boolean> {
   const token = await getAuthToken();
-  if (!token) return false;
+  if (!token) {
+    console.log("[sos-loc] post skipped — no auth token");
+    return false;
+  }
+  const url = `${apiBaseUrl}/sos/${encodeURIComponent(sosId)}/location`;
   try {
-    const res = await fetch(
-      `${apiBaseUrl}/sos/${encodeURIComponent(sosId)}/location`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(point),
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
       },
-    );
+      body: JSON.stringify(point),
+    });
+    if (!res.ok) console.log("[sos-loc] post rejected", res.status, url);
     return res.ok;
-  } catch {
+  } catch (err) {
+    console.log("[sos-loc] post failed", String(err), url);
     return false;
   }
 }
@@ -104,7 +107,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }: LocationTaskPayloa
   if (!latest) return;
   const point = toPoint(latest);
   const ok = await postLocation(active.sosId, point);
-  console.log("[sos-loc] fix", ok ? "sent" : "queued");
+  console.log("[sos-loc] fix", active.sosId, ok ? "sent" : "queued");
   if (!ok) await queueFix(active.sosId, point);
 });
 
@@ -115,7 +118,7 @@ async function postCurrentFix(sosId: string): Promise<void> {
     });
     const point = toPoint(pos);
     const ok = await postLocation(sosId, point);
-    console.log("[sos-loc] initial fix", ok ? "sent" : "queued");
+    console.log("[sos-loc] initial fix", sosId, ok ? "sent" : "queued");
     if (!ok) await queueFix(sosId, point);
   } catch (err) {
     console.log("[sos-loc] initial fix failed", String(err));
