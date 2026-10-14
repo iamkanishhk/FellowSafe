@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { useAuth } from "@clerk/expo";
 
-const baseURL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8080";
+export const apiBaseUrl =
+  process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8080";
 
 export interface SyncedUser {
   id: string;
@@ -13,7 +14,7 @@ export interface SyncedUser {
 
 export interface SyncUserResult {
   user: SyncedUser;
-  linkedContacts: { id: string; ownerName: string }[];
+  linkedContacts: { id: string; name: string }[];
 }
 
 export interface TrustedContact {
@@ -31,6 +32,52 @@ export interface ContactMatch {
   phoneE164: string;
   userId: string;
   name: string;
+}
+
+export interface SosLocationInput {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+}
+
+export interface CreateSosInput {
+  battery?: number;
+  /** Client-generated idempotency key; lets an offline flush reconcile exactly once. */
+  clientRef?: string;
+  /** ISO timestamp of when the alarm actually started on the device. */
+  createdOfflineAt?: string;
+  lastLocation?: SosLocationInput | null;
+}
+
+/** One live fix POSTed by the victim's location task. Mirrors `POST /sos/:id/location`. */
+export interface SosLocationPoint {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+  speed?: number | null;
+  heading?: number | null;
+  battery?: number | null;
+  recordedAt?: string;
+}
+
+/** The newest fix as the server reports it through `GET /sos/:id` or `sos:location`. */
+export interface SosLiveLocation {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  battery: number | null;
+  recordedAt: string;
+}
+
+export interface SosDetail {
+  sosId: string;
+  status: "ACTIVE" | "RESOLVED";
+  startedAt: string;
+  endedAt: string | null;
+  ownerName: string;
+  lastLocation: SosLiveLocation | null;
 }
 
 export class ApiError extends Error {
@@ -70,7 +117,7 @@ export function useApi() {
       if (init.body && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      return fetch(`${baseURL}${path}`, { ...init, headers });
+      return fetch(`${apiBaseUrl}${path}`, { ...init, headers });
     },
     [getToken],
   );
@@ -131,6 +178,17 @@ export function useApi() {
     [authedFetch],
   );
 
+  const removeContact = useCallback(
+    async (id: string): Promise<void> => {
+      await parseJson<{ ok: boolean }>(
+        await authedFetch(`/contacts/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        }),
+      );
+    },
+    [authedFetch],
+  );
+
   const registerDevice = useCallback(
     async (fcmToken: string, platform: "android" | "ios"): Promise<void> => {
       await parseJson<{ ok: boolean }>(
@@ -144,17 +202,26 @@ export function useApi() {
   );
 
   const createSos = useCallback(
-    async (battery?: number): Promise<{
+    async (
+      input: CreateSosInput = {},
+    ): Promise<{
       sosId: string;
       startedAt: string;
       alreadyActive: boolean;
-    }> =>
-      parseJson(
+    }> => {
+      const body: Record<string, unknown> = {};
+      if (input.battery !== undefined) body.battery = input.battery;
+      if (input.clientRef) body.clientRef = input.clientRef;
+      if (input.createdOfflineAt) body.createdOfflineAt = input.createdOfflineAt;
+      if (input.lastLocation) body.lastLocation = input.lastLocation;
+
+      return parseJson(
         await authedFetch("/sos", {
           method: "POST",
-          body: JSON.stringify(battery === undefined ? {} : { battery }),
+          body: JSON.stringify(body),
         }),
-      ),
+      );
+    },
     [authedFetch],
   );
 
@@ -188,6 +255,25 @@ export function useApi() {
     [authedFetch],
   );
 
+  const getSos = useCallback(
+    async (sosId: string): Promise<SosDetail> =>
+      parseJson<SosDetail>(
+        await authedFetch(`/sos/${encodeURIComponent(sosId)}`),
+      ),
+    [authedFetch],
+  );
+
+  const postLocation = useCallback(
+    async (sosId: string, point: SosLocationPoint): Promise<void> => {
+      const res = await authedFetch(
+        `/sos/${encodeURIComponent(sosId)}/location`,
+        { method: "POST", body: JSON.stringify(point) },
+      );
+      if (!res.ok) throw new Error(`location post failed (${res.status})`);
+    },
+    [authedFetch],
+  );
+
   return {
     authedFetch,
     syncUser,
@@ -195,10 +281,13 @@ export function useApi() {
     listContacts,
     matchContacts,
     addContact,
+    removeContact,
     registerDevice,
     createSos,
     getActiveSos,
     respondToSos,
     resolveSos,
+    getSos,
+    postLocation,
   };
 }

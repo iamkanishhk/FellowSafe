@@ -1,16 +1,12 @@
 import { createServer } from 'node:http';
-import { Server } from 'socket.io';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { pool } from './db/pool.js';
+import { attachRealtime } from './realtime/io.js';
 
 const httpServer = createServer(createApp());
 
-const io = new Server(httpServer, { cors: { origin: false } });
-
-io.on('connection', (socket) => {
-  socket.disconnect(true);
-});
+const io = attachRealtime(httpServer);
 
 httpServer.listen(env.PORT, () => {
   console.log(`fellasafe-server listening on :${env.PORT} [${env.NODE_ENV}]`);

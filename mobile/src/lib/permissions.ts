@@ -1,29 +1,39 @@
-import * as Contacts from "expo-contacts";
+import { PermissionsAndroid, Platform } from "react-native";
 import * as Location from "expo-location";
+import * as Contacts from "expo-contacts";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 
-export type PermissionKind = "location" | "contacts" | "notifications";
+export type PermissionKind = "location" | "contacts" | "notifications" | "sms";
 
 export interface PermissionState {
   granted: boolean;
   canAskAgain: boolean;
 }
 
-export type PermissionSnapshot = Record<PermissionKind, PermissionState>;
+export interface PermissionSnapshot {
+  location: PermissionState;
+  contacts: PermissionState;
+  notifications: PermissionState;
+  sms: PermissionState;
+}
 
-export const REQUIRED_PERMISSIONS: PermissionKind[] = [
-  "location",
-  "contacts",
-  "notifications",
-];
+/** iOS has no silent-SMS capability, so SEND_SMS is an Android-only gate. */
+export const SMS_REQUIRED = Platform.OS === "android";
+
+/** The permissions the gate insists on before the app is usable. */
+export function requiredKinds(): PermissionKind[] {
+  return SMS_REQUIRED
+    ? ["location", "contacts", "notifications", "sms"]
+    : ["location", "contacts", "notifications"];
+}
 
 /**
  * Set only once every required permission is granted. Once set, the gate is
  * skipped on every later launch — a revoked permission is handled by the
  * feature that needs it, not by re-blocking the whole app.
  */
-const COMPLETED_KEY = "onboarding_permissions_v1";
+const COMPLETED_KEY = "onboarding_permissions_v2";
 
 /** Reads the current grant state without prompting the user. */
 export async function getPermissionState(
@@ -45,6 +55,13 @@ export async function getPermissionState(
           await Notifications.getPermissionsAsync();
         return { granted, canAskAgain };
       }
+      case "sms": {
+        if (Platform.OS !== "android") return { granted: true, canAskAgain: false };
+        const granted = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.SEND_SMS,
+        );
+        return { granted, canAskAgain: true };
+      }
     }
   } catch {
     return { granted: false, canAskAgain: true };
@@ -52,12 +69,13 @@ export async function getPermissionState(
 }
 
 export async function getPermissionSnapshot(): Promise<PermissionSnapshot> {
-  const [location, contacts, notifications] = await Promise.all([
+  const [location, contacts, notifications, sms] = await Promise.all([
     getPermissionState("location"),
     getPermissionState("contacts"),
     getPermissionState("notifications"),
+    getPermissionState("sms"),
   ]);
-  return { location, contacts, notifications };
+  return { location, contacts, notifications, sms };
 }
 
 /** Shows the OS prompt for one permission (or reports the current state). */
@@ -80,6 +98,16 @@ export async function requestPermission(
           await Notifications.requestPermissionsAsync();
         return { granted, canAskAgain };
       }
+      case "sms": {
+        if (Platform.OS !== "android") return { granted: true, canAskAgain: false };
+        const result = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.SEND_SMS,
+        );
+        return {
+          granted: result === PermissionsAndroid.RESULTS.GRANTED,
+          canAskAgain: result !== PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+        };
+      }
     }
   } catch {
     return { granted: false, canAskAgain: true };
@@ -90,7 +118,8 @@ export function isFullyGranted(snapshot: PermissionSnapshot): boolean {
   return (
     snapshot.location.granted &&
     snapshot.contacts.granted &&
-    snapshot.notifications.granted
+    snapshot.notifications.granted &&
+    snapshot.sms.granted
   );
 }
 

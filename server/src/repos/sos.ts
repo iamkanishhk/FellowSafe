@@ -134,6 +134,154 @@ export async function sweepStaleLocations(db = pool): Promise<void> {
   await db.query(`delete from sos_locations where recorded_at < now() - interval '2 hours'`);
 }
 
+export interface LocationInput {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  battery: number | null;
+  /** Device-reported timestamp; stored on the trail row but not trusted for ordering. */
+  recordedAt: Date;
+}
+
+/**
+ * Plan §5.1. Owner-only ingest of one live fix. One transaction: the newest
+ * point is mirrored onto `sos_sessions.last_*` and appended to `sos_locations`
+ * together, so a reader never sees a trail head that disagrees with the session.
+ *
+ * `last_location_at` is the server clock (`now()`), not the device clock — the
+ * "updated Ns ago" stamp on the contact's map must not be skewable by a phone
+ * with a wrong clock. The device timestamp is kept on the trail row as-is.
+ *
+ * A zero-row update means the caller is not the owner, or the session is no
+ * longer ACTIVE; both are reported to the route as `null` (→ 404, never 403).
+ */
+export async function recordLocation(
+  userId: string,
+  sosId: string,
+  point: LocationInput,
+): Promise<SosSessionRow | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+
+    const updated = await client.query<SosSessionRow>(
+      `update sos_sessions
+          set last_latitude = $3,
+              last_longitude = $4,
+              last_accuracy = $5,
+              last_speed = $6,
+              last_location_at = now(),
+              battery_level = coalesce($7, battery_level)
+        where id = $1 and user_id = $2 and status = 'ACTIVE'
+        returning *`,
+      [
+        sosId,
+        userId,
+        point.latitude,
+        point.longitude,
+        point.accuracy,
+        point.speed,
+        point.battery,
+      ],
+    );
+
+    const session = updated.rows[0];
+    if (!session) {
+      await client.query('rollback');
+      return null;
+    }
+
+    await client.query(
+      `insert into sos_locations
+         (sos_id, latitude, longitude, accuracy, speed, heading, battery_level, recorded_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        sosId,
+        point.latitude,
+        point.longitude,
+        point.accuracy,
+        point.speed,
+        point.heading,
+        point.battery,
+        point.recordedAt,
+      ],
+    );
+
+    await client.query('commit');
+    return session;
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export interface SosLocationRow {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  battery_level: number | null;
+  recorded_at: Date;
+}
+
+/**
+ * Plan §3.2.5. Newest trail row for a session, used by `GET /sos/:id` so the
+ * response can carry `heading` (which has no home on `sos_sessions`) and the
+ * device-reported `recorded_at`. Ordered by the index `sos_locations_sos_time`.
+ */
+export async function latestLocation(
+  sosId: string,
+  db = pool,
+): Promise<SosLocationRow | null> {
+  const { rows } = await db.query<SosLocationRow>(
+    `select latitude, longitude, accuracy, speed, heading, battery_level, recorded_at
+       from sos_locations
+      where sos_id = $1
+      order by recorded_at desc
+      limit 1`,
+    [sosId],
+  );
+  return rows[0] ?? null;
+}
+
+export interface SosViewRow extends SosSessionRow {
+  owner_name: string;
+}
+
+/**
+ * Plan §5.2. Resolves a session the caller is allowed to see: the owner, or a
+ * `LINKED` contact of the owner. Everyone else gets `null` (→ 404) so a stranger
+ * cannot probe whether a session exists. Also used to authorise a socket `join`.
+ */
+export async function findSosForViewer(
+  sosId: string,
+  callerUserId: string,
+  db = pool,
+): Promise<SosViewRow | null> {
+  const { rows } = await db.query<SosViewRow>(
+    `select s.*, u.name as owner_name
+       from sos_sessions s
+       join users u on u.id = s.user_id
+      where s.id = $1
+        and (
+          s.user_id = $2
+          or exists (
+            select 1 from trusted_contacts tc
+             where tc.user_id = s.user_id
+               and tc.linked_user_id = $2
+               and tc.status = 'LINKED'
+          )
+        )`,
+    [sosId, callerUserId],
+  );
+  return rows[0] ?? null;
+}
+
 export interface RespondingContact {
   id: string;
   user_id: string;

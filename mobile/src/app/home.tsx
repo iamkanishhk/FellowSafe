@@ -14,9 +14,18 @@ import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import Navbar from "../components/Navbar";
 import Svg, { Circle } from "react-native-svg";
+import * as Crypto from "expo-crypto";
 import { useCurrentUser } from "../lib/user-context";
 import { useApi } from "../lib/api";
 import { isOnboardingComplete } from "../lib/permissions";
+import { isOnline } from "../lib/connectivity";
+import { getContactsCache, saveContactsCache } from "../lib/contacts-cache";
+import { enqueueSos, markSosFlushed, markSosSmsResult } from "../lib/sos-queue";
+import {
+  buildSosMessage,
+  getBestEffortLocation,
+  sendOfflineSms,
+} from "../lib/offline-sos";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -44,7 +53,7 @@ export default function Home() {
   const [starting, setStarting] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
   const { fullName, firstName, email, phone } = useCurrentUser();
-  const { createSos } = useApi();
+  const { createSos, listContacts } = useApi();
 
   // Safety net: the dashboard is unreachable until permissions onboarding is
   // done, so a stale or deep-linked entry bounces back to the gate.
@@ -58,16 +67,78 @@ export default function Home() {
     };
   }, []);
 
+  // Keep the offline contacts snapshot warm whenever the server is reachable.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!(await isOnline())) return;
+      const contacts = await listContacts();
+      if (active) await saveContactsCache(contacts);
+    })().catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [listContacts]);
+
   const handleActivate = useCallback(() => {
     if (starting) return;
     setStarting(true);
-    createSos()
-      .then((sos) => {
+
+    const run = async () => {
+      const createdAt = new Date();
+      const clientRef = Crypto.randomUUID();
+
+      // Snapshot what the offline path needs, and persist the record BEFORE any
+      // send so a crash mid-send still leaves a trace (Plan §6.2.1).
+      const [contacts, coords] = await Promise.all([
+        getContactsCache(),
+        getBestEffortLocation(),
+      ]);
+      await enqueueSos({
+        clientRef,
+        createdAt: createdAt.toISOString(),
+        coords,
+        contacts,
+        smsDispatchedAt: null,
+        status: "QUEUED",
+      });
+
+      if (await isOnline()) {
+        const sos = await createSos({
+          clientRef,
+          createdOfflineAt: createdAt.toISOString(),
+          lastLocation: coords,
+        });
+        await markSosFlushed(clientRef);
         router.push({
           pathname: "/alarm",
           params: { sosId: sos.sosId, startedAt: sos.startedAt },
         });
-      })
+        return;
+      }
+
+      // Offline: reach trusted contacts directly, then open the alarm in
+      // offline mode.
+      const message = buildSosMessage(fullName, coords, createdAt);
+      const dispatch = await sendOfflineSms(contacts, message);
+      await markSosSmsResult(
+        clientRef,
+        dispatch.ok ? "SMS_SENT" : "SMS_FAILED",
+        new Date().toISOString(),
+      );
+      router.push({
+        pathname: "/alarm",
+        params: {
+          offline: "1",
+          startedAt: createdAt.toISOString(),
+          smsMode: dispatch.mode,
+          smsSent: String(dispatch.sent),
+          smsTotal: String(dispatch.total),
+        },
+      });
+    };
+
+    run()
       .catch(() => {
         Alert.alert(
           "Couldn't activate the alarm",
@@ -77,7 +148,7 @@ export default function Home() {
       .finally(() => {
         setStarting(false);
       });
-  }, [createSos, starting]);
+  }, [createSos, fullName, starting]);
 
   // Phone is only known once the profile has synced; fall back to email so the
   // second line is never empty for a signed-in user.

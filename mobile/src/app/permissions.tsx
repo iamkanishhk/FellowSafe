@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   AppState,
   Linking,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -17,6 +19,7 @@ import {
   isOnboardingComplete,
   markOnboardingComplete,
   requestPermission,
+  requiredKinds,
   type PermissionKind,
   type PermissionSnapshot,
 } from "../lib/permissions";
@@ -34,13 +37,14 @@ const GREEN = "#1FA85B";
 const ROW_BG = "#FFFFFF";
 const ROW_BORDER = "#E6ECF5";
 
-const REQUIRED: PermissionKind[] = ["location", "contacts", "notifications"];
+const REQUIRED: PermissionKind[] = requiredKinds();
 
 const ROWS: {
   key: PermissionKind;
   icon: string;
   title: string;
   desc: string;
+  androidOnly?: boolean;
 }[] = [
   {
     key: "location",
@@ -59,6 +63,13 @@ const ROWS: {
     icon: "🔔",
     title: "Notifications",
     desc: "Know the moment a loved one needs help.",
+  },
+  {
+    key: "sms",
+    icon: "✉️",
+    title: "Emergency SMS",
+    desc: "Text your trusted contacts automatically when you have no internet.",
+    androidOnly: true,
   },
 ];
 
@@ -233,48 +244,54 @@ export default function Permissions() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <StatusBar style="dark" />
 
-      <View style={styles.header}>
-        <Text style={styles.title}>Before you start</Text>
-        <Text style={styles.subtitle}>
-          FellowSafe needs a few permissions so it can reach you and your trusted
-          contacts in an emergency.
-        </Text>
-      </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <Text style={styles.title}>Before you start</Text>
+          <Text style={styles.subtitle}>
+            FellowSafe needs a few permissions so it can reach you and your trusted
+            contacts in an emergency.
+          </Text>
+        </View>
 
-      <View style={styles.progressRow}>
-        <Text style={styles.progressText}>
-          {snapshot ? `${grantedCount} of ${REQUIRED.length} enabled` : "Checking…"}
-        </Text>
-        <Text style={styles.progressHint}>Required</Text>
-      </View>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressText}>
+            {snapshot ? `${grantedCount} of ${REQUIRED.length} enabled` : "Checking…"}
+          </Text>
+          <Text style={styles.progressHint}>Required</Text>
+        </View>
 
-      <View style={styles.rows}>
-        {ROWS.map((row) => {
-          const state = snapshot?.[row.key];
-          return (
+        <View style={styles.rows}>
+          {ROWS.filter((row) => !row.androidOnly || Platform.OS === "android").map(
+            (row) => {
+              const state = snapshot?.[row.key];
+              return (
+                <Row
+                  key={row.key}
+                  icon={row.icon}
+                  title={row.title}
+                  desc={row.desc}
+                  granted={!!state?.granted}
+                  onPress={() => void requestOne(row.key)}
+                />
+              );
+            },
+          )}
+
+          {supportsFullScreen ? (
             <Row
-              key={row.key}
-              icon={row.icon}
-              title={row.title}
-              desc={row.desc}
-              granted={!!state?.granted}
-              onPress={() => void requestOne(row.key)}
+              icon="🚨"
+              title="Full-screen alerts"
+              desc="Show emergency alerts over the lock screen."
+              granted={fullScreenReady}
+              onPress={() => void enableFullScreen()}
             />
-          );
-        })}
-
-        {supportsFullScreen ? (
-          <Row
-            icon="🚨"
-            title="Full-screen alerts"
-            desc="Show emergency alerts over the lock screen."
-            granted={fullScreenReady}
-            onPress={() => void enableFullScreen()}
-          />
-        ) : null}
-      </View>
-
-      <View style={{ flex: 1 }} />
+          ) : null}
+        </View>
+      </ScrollView>
 
       <Text style={styles.footnote}>
         You can change these anytime in your device settings.
@@ -311,6 +328,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F8FD",
     paddingHorizontal: 20,
     paddingTop: 8,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 16,
   },
   header: {
     marginTop: 12,

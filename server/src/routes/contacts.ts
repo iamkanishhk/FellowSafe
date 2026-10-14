@@ -9,6 +9,7 @@ import {
   addTrustedContact,
   findUsersByPhones,
   listTrustedContacts,
+  removeTrustedContact,
   type TrustedContactRow,
 } from '../repos/contacts.js';
 
@@ -23,6 +24,12 @@ const createBodySchema = z.object({
   phone: z.string().trim().min(1).max(32),
   relationship: z.string().trim().min(1).max(60).optional(),
 });
+
+/** Express 5 types `params` values as `string | string[]`; this narrows to one. */
+function contactIdParam(req: Request): string | null {
+  const value = req.params.id;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
 
 /** The local `users` row is written by `/auth/sync`; contact writes depend on it. */
 function requireSyncedUser(req: Request): UserRow {
@@ -142,6 +149,30 @@ export function contactsRouter(): Router {
       });
 
       res.status(201).json({ contact: projectContact(contact) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Plan §7. Removes a trusted contact the user owns. Soft delete: the row is
+   * kept as a tombstone so a later auto-link cannot re-add it. Idempotent in the
+   * sense that a second removal just reports the contact is gone.
+   */
+  router.delete('/contacts/:id', requireAuth, loadUser, async (req, res, next) => {
+    try {
+      const user = requireSyncedUser(req);
+      const contactId = contactIdParam(req);
+      if (!contactId) {
+        next(HttpError.badRequest('CONTACT_ID_REQUIRED', 'a contact id is required'));
+        return;
+      }
+      const removed = await removeTrustedContact(user.id, contactId);
+      if (!removed) {
+        next(HttpError.notFound('CONTACT_NOT_FOUND', 'no such trusted contact'));
+        return;
+      }
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

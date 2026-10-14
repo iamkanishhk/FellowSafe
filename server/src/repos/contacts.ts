@@ -130,3 +130,27 @@ export async function addTrustedContact(
   if (!contact) throw new Error(`trusted_contacts add for ${input.userId} returned no row`);
   return contact;
 }
+
+/**
+ * Plan §7. Removes a trusted contact by soft-deleting it to `REMOVED`, so the
+ * tombstone survives and a later `/auth/sync` auto-link cannot silently revive a
+ * contact the user chose to drop. Scoped to the owner, so one user can never
+ * remove another user's contact. Returns false when there was nothing to remove.
+ */
+export async function removeTrustedContact(
+  userId: string,
+  contactId: string,
+  db = pool,
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `update trusted_contacts
+        set status = 'REMOVED',
+            linked_user_id = null,
+            updated_at = now()
+      where id = $1
+        and user_id = $2
+        and status <> 'REMOVED'`,
+    [contactId, userId],
+  );
+  return (rowCount ?? 0) > 0;
+}

@@ -19,7 +19,14 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.iam.kanishk.mobile",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.SEND_SMS"
+      ]
     },
     "web": {
       "output": "static",
@@ -45,16 +52,25 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Fellow Safe shares your location with your trusted contacts when you raise an alarm."
+          "locationWhenInUsePermission": "Fellow Safe shares your location with your trusted contacts when you raise an alarm.",
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       "expo-notifications",
+      "./plugins/withGoogleMapsKey",
+      "react-native-maps",
       "./plugins/withFullScreenIntent",
       "@clerk/expo"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "248601a9-8dcd-4273-bad4-3b3e54c72a1d"
+      }
     }
   }
 }

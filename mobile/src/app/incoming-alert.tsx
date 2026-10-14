@@ -4,6 +4,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import notifee from "@notifee/react-native";
+import { useApi } from "../lib/api";
+import { useSosStream } from "../lib/realtime";
+import LiveMap from "../components/LiveMap";
 
 const RED = "#E84444";
 const RED_BRIGHT = "#F25555";
@@ -14,6 +17,12 @@ export default function IncomingAlert() {
     userName?: string;
   }>();
   const name = userName && userName.length > 0 ? userName : "Your contact";
+  const { getSos } = useApi();
+
+  const { location, resolved, connected } = useSosStream(
+    sosId,
+    sosId ? () => getSos(sosId).catch(() => null) : undefined,
+  );
 
   const handleOpenApp = useCallback(() => {
     if (sosId) {
@@ -30,6 +39,14 @@ export default function IncomingAlert() {
     BackHandler.exitApp();
   }, [sosId]);
 
+  const statusLabel = resolved
+    ? "Alarm resolved"
+    : location
+      ? connected
+        ? "Live location"
+        : "Updating\u2026"
+      : "Locating\u2026";
+
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
@@ -37,12 +54,15 @@ export default function IncomingAlert() {
         <View style={styles.hero}>
           <Text style={styles.siren}>🚨</Text>
           <Text style={styles.title}>{name} needs help</Text>
-          <Text style={styles.subtitle}>
-            An emergency alarm was activated. Open Fellow Safe to respond.
-          </Text>
+          <View style={styles.statusRow}>
+            <View style={styles.dot} />
+            <Text style={styles.status}>{statusLabel}</Text>
+          </View>
         </View>
 
-        <View style={{ flex: 1 }} />
+        <View style={styles.mapWrap}>
+          <LiveMap location={location} ownerName={name} resolved={resolved} />
+        </View>
 
         <Pressable
           style={styles.primaryBtn}
@@ -74,34 +94,54 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 20,
-    paddingTop: 40,
+    paddingTop: 28,
     paddingBottom: 22,
   },
   hero: {
     alignItems: "center",
-    marginTop: 24,
   },
   siren: {
-    fontSize: 64,
+    fontSize: 44,
     textAlign: "center",
     textShadowColor: RED_BRIGHT,
     textShadowRadius: 22,
   },
   title: {
-    marginTop: 14,
-    fontSize: 26,
+    marginTop: 8,
+    fontSize: 24,
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -0.3,
     textAlign: "center",
   },
-  subtitle: {
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginTop: 10,
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#C9B6B8",
-    textAlign: "center",
-    paddingHorizontal: 12,
+  },
+  status: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    color: "#FFD9D9",
+    textTransform: "uppercase",
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: RED,
+  },
+  mapWrap: {
+    flex: 1,
+    marginTop: 16,
+    marginBottom: 18,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: "#1E0D10",
+    borderWidth: 1,
+    borderColor: "rgba(232,68,68,0.35)",
   },
   primaryBtn: {
     height: 54,

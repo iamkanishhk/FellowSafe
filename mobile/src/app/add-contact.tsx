@@ -26,6 +26,7 @@ import {
   type TrustedContact,
 } from "../lib/api";
 import { toE164 } from "../lib/phone";
+import { saveContactsCache } from "../lib/contacts-cache";
 import { formatPhone } from "../lib/user-context";
 
 const BLUE = "#2E7CF6";
@@ -67,19 +68,23 @@ function ContactRow({
   matched,
   added,
   adding,
+  removing,
   onPress,
+  onRemove,
 }: {
   contact: DeviceContact;
   matched: boolean;
   added: boolean;
   adding: boolean;
+  removing?: boolean;
   onPress: () => void;
+  onRemove?: () => void;
 }) {
   return (
     <Pressable
       style={[styles.row, added && styles.rowTrusted]}
       onPress={onPress}
-      disabled={adding || added}
+      disabled={adding || removing || (added && !onRemove)}
       accessibilityRole="button"
     >
       <View style={[styles.avatar, added && styles.avatarTrusted]}>
@@ -95,8 +100,18 @@ function ContactRow({
           {contact.phoneRaw}
         </Text>
       </View>
-      {adding ? (
+      {adding || removing ? (
         <ActivityIndicator color={BLUE} />
+      ) : added && onRemove ? (
+        <Pressable
+          onPress={onRemove}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${contact.name} from trusted contacts`}
+          style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
+        >
+          <Text style={styles.removeText}>Remove</Text>
+        </Pressable>
       ) : added ? (
         <View style={styles.checkBadge}>
           <Text style={styles.checkBadgeGlyph}>✓</Text>
@@ -114,7 +129,7 @@ function ContactRow({
 }
 
 export default function AddContact() {
-  const { listContacts, matchContacts, addContact } = useApi();
+  const { listContacts, matchContacts, addContact, removeContact } = useApi();
 
   const [permission, setPermission] = useState<PermissionState>("loading");
   const [canAskAgain, setCanAskAgain] = useState(true);
@@ -123,6 +138,7 @@ export default function AddContact() {
   const [matchedPhones, setMatchedPhones] = useState<Record<string, string>>({});
   const [trusted, setTrusted] = useState<TrustedContact[]>([]);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const loadTrusted = useCallback(async () => {
@@ -252,19 +268,50 @@ export default function AddContact() {
     [addContact, addingId],
   );
 
-  const trustedPhones = useMemo(
-    () => new Set(trusted.map((c) => c.phoneE164)),
-    [trusted],
+  const doRemove = useCallback(
+    async (contact: TrustedContact) => {
+      setRemovingId(contact.id);
+      try {
+        await removeContact(contact.id);
+        setTrusted((prev) => prev.filter((c) => c.id !== contact.id));
+        // Refresh the offline snapshot so a removed contact is never texted.
+        try {
+          await saveContactsCache(await listContacts());
+        } catch {
+          // Cache refresh is best-effort; the server is the source of truth.
+        }
+      } catch (err) {
+        Alert.alert(
+          "Couldn't remove contact",
+          err instanceof Error ? err.message : "Please try again.",
+        );
+      } finally {
+        setRemovingId(null);
+      }
+    },
+    [listContacts, removeContact],
   );
 
-  const trustedRows = useMemo<DeviceContact[]>(
-    () =>
-      trusted.map((c) => ({
-        id: `trusted:${c.id}`,
-        name: c.name,
-        phoneE164: c.phoneE164,
-        phoneRaw: formatPhone(c.phoneE164) ?? c.phoneE164,
-      })),
+  const onRemove = useCallback(
+    (contact: TrustedContact) => {
+      Alert.alert(
+        "Remove trusted contact",
+        `${contact.name} will no longer be alerted when you activate your alarm.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: () => void doRemove(contact),
+          },
+        ],
+      );
+    },
+    [doRemove],
+  );
+
+  const trustedPhones = useMemo(
+    () => new Set(trusted.map((c) => c.phoneE164)),
     [trusted],
   );
 
@@ -280,19 +327,26 @@ export default function AddContact() {
         </View>
 
         <Text style={styles.sectionTitle}>Trusted contacts</Text>
-        {trustedRows.length === 0 ? (
+        {trusted.length === 0 ? (
           <Text style={styles.sectionEmpty}>
             No trusted contacts yet — add one from the list below.
           </Text>
         ) : (
-          trustedRows.map((c) => (
+          trusted.map((c) => (
             <ContactRow
               key={c.id}
-              contact={c}
+              contact={{
+                id: `trusted:${c.id}`,
+                name: c.name,
+                phoneE164: c.phoneE164,
+                phoneRaw: formatPhone(c.phoneE164) ?? c.phoneE164,
+              }}
               matched={false}
               added
               adding={false}
+              removing={removingId === c.id}
               onPress={() => {}}
+              onRemove={() => onRemove(c)}
             />
           ))
         )}
@@ -300,7 +354,7 @@ export default function AddContact() {
         <Text style={styles.sectionTitle}>All contacts</Text>
       </View>
     ),
-    [trustedRows],
+    [onRemove, removingId, trusted],
   );
 
   if (permission === "loading") {
@@ -597,9 +651,25 @@ const styles = StyleSheet.create({
   },
   checkBadgeGlyph: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
-    marginTop: -1,
+    marginTop: -2,
+  },
+  removeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#F0C7C7",
+    backgroundColor: "#FDF2F2",
+  },
+  removeBtnPressed: {
+    opacity: 0.6,
+  },
+  removeText: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#D14343",
   },
   gate: {
     flex: 1,

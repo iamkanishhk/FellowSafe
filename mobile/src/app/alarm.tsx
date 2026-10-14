@@ -10,6 +10,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import { useApi } from "../lib/api";
+import {
+  startLocationSharing,
+  stopLocationSharing,
+} from "../lib/location-stream";
 
 const RED = "#E84444";
 const RED_BRIGHT = "#F25555";
@@ -20,10 +24,34 @@ function formatTime(total: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function offlineSubtitle(mode: "silent" | "composer", sent: number, total: number) {
+  if (mode === "silent" && total > 0) {
+    const reached =
+      sent >= total
+        ? `Sent automatically to all ${total} trusted contacts.`
+        : `Sent to ${sent} of ${total} trusted contacts.`;
+    return `${reached}\nThis alert syncs to the server when you're back online.`;
+  }
+  return "Finish sending the SMS to your trusted contacts.\nThis alert syncs to the server when you're back online.";
+}
+
 export default function AlarmActivated() {
   const [remaining, setRemaining] = useState(45);
   const [cancelling, setCancelling] = useState(false);
-  const { sosId } = useLocalSearchParams<{ sosId?: string; startedAt?: string }>();
+  const [sharingLocation, setSharingLocation] = useState(false);
+  const { sosId, startedAt, offline, smsMode, smsSent, smsTotal } =
+    useLocalSearchParams<{
+      sosId?: string;
+      startedAt?: string;
+      offline?: string;
+      smsMode?: string;
+      smsSent?: string;
+      smsTotal?: string;
+    }>();
+  const isOffline = offline === "1";
+  const mode: "silent" | "composer" = smsMode === "silent" ? "silent" : "composer";
+  const sentCount = Number(smsSent);
+  const totalCount = Number(smsTotal);
   const { resolveSos } = useApi();
 
   useEffect(() => {
@@ -34,10 +62,26 @@ export default function AlarmActivated() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (isOffline || !sosId) return;
+    let cancelled = false;
+    startLocationSharing(sosId, startedAt ?? new Date().toISOString()).then(
+      (ok) => {
+        if (!cancelled) setSharingLocation(ok);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [isOffline, sosId, startedAt]);
+
   const handleCancel = useCallback(() => {
     if (cancelling) return;
     setCancelling(true);
-    const finish = () => router.replace("/home");
+    const finish = () => {
+      void stopLocationSharing();
+      router.replace("/home");
+    };
     if (!sosId) {
       finish();
       return;
@@ -69,9 +113,17 @@ export default function AlarmActivated() {
         <View style={styles.hero}>
           <Text style={styles.siren}>🚨</Text>
           <Text style={styles.title}>Alarm Activated</Text>
+          {isOffline ? (
+            <Text style={styles.offlineBadge}>
+              {mode === "silent" ? "OFFLINE · SMS SENT" : "OFFLINE · SMS"}
+            </Text>
+          ) : null}
           <Text style={styles.subtitle}>
-            Your trusted contacts have been notified{"\n"}and your location is
-            being shared.
+            {isOffline
+              ? offlineSubtitle(mode, sentCount, totalCount)
+              : sharingLocation
+                ? "Your trusted contacts have been notified\nand your location is being shared."
+                : "Your trusted contacts have been notified."}
           </Text>
         </View>
 
@@ -157,6 +209,20 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -0.2,
+  },
+  offlineBadge: {
+    marginTop: 8,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    color: "#FFD9D9",
+    backgroundColor: "rgba(232,68,68,0.25)",
+    borderColor: "rgba(232,68,68,0.5)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    overflow: "hidden",
   },
   subtitle: {
     marginTop: 8,

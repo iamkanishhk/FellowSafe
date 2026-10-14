@@ -6,15 +6,36 @@ import {
   createSosSession,
   findActiveSos,
   findRespondingContact,
+  findSosForViewer,
+  latestLocation,
+  recordLocation,
   resolveSosSession,
   sweepStaleLocations,
   upsertSosResponse,
 } from '../repos/sos.js';
+import { emitSosLocation, emitSosResolved } from '../realtime/io.js';
 import { notifyContactsOfSos } from '../services/sos-notifier.js';
 
 const createBodySchema = z.object({
   battery: z.number().int().min(0).max(100).optional(),
 });
+
+const locationBodySchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracy: z.number().nonnegative().optional(),
+  speed: z.number().optional(),
+  heading: z.number().min(0).max(360).optional(),
+  battery: z.number().int().min(0).max(100).optional(),
+  recordedAt: z.string().min(1).optional(),
+});
+
+/** Device clocks lie; a bad timestamp falls back to server time rather than 500. */
+function coerceRecordedAt(raw: string | undefined): Date {
+  if (!raw) return new Date();
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
 
 /** Express 5 types `params` values as `string | string[]`; this narrows to one. */
 function sosIdParam(req: Request): string | null {
@@ -119,11 +140,112 @@ export function sosRouter(): Router {
         return;
       }
 
+      emitSosResolved(sosId, result.session.ended_at?.toISOString() ?? null);
+
       res.json({
         ok: true,
         endedAt: result.session.ended_at,
         alreadyResolved: result.alreadyResolved,
       });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Plan §5.2. Viewer read for the live map. The owner and `LINKED` contacts see
+   * the session; a stranger gets 404 so existence is not leaked. This is the
+   * cold-start backfill (the full-screen intent launched the app with only a
+   * `sosId`) and the poll fallback when the socket cannot connect.
+   */
+  router.get('/sos/:id', requireAuth, loadUser, async (req, res, next) => {
+    try {
+      const user = requireSyncedUser(req);
+      const sosId = sosIdParam(req);
+      if (!sosId) {
+        next(HttpError.notFound('NOT_FOUND', 'sos session not found'));
+        return;
+      }
+
+      const view = await findSosForViewer(sosId, user.id);
+      if (!view) {
+        next(HttpError.notFound('NOT_FOUND', 'sos session not found'));
+        return;
+      }
+
+      const latest = await latestLocation(sosId);
+      res.json({
+        sosId: view.id,
+        status: view.status,
+        startedAt: view.started_at,
+        endedAt: view.ended_at,
+        ownerName: view.owner_name,
+        lastLocation: latest
+          ? {
+              latitude: latest.latitude,
+              longitude: latest.longitude,
+              accuracy: latest.accuracy,
+              speed: latest.speed,
+              heading: latest.heading,
+              battery: latest.battery_level,
+              recordedAt: latest.recorded_at,
+            }
+          : null,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Plan §5.1. Owner-only live-fix ingest. The phone posts over REST (not the
+   * socket) because a socket dies when Android backgrounds the app; the server
+   * fans the point out to the session's room instead. A non-owner or a resolved
+   * session is a 404, never a 403.
+   */
+  router.post('/sos/:id/location', requireAuth, loadUser, async (req, res, next) => {
+    try {
+      const user = requireSyncedUser(req);
+      const sosId = sosIdParam(req);
+      if (!sosId) {
+        next(HttpError.notFound('NOT_FOUND', 'sos session not found'));
+        return;
+      }
+
+      const parsed = locationBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        next(HttpError.badRequest('INVALID_LOCATION', 'invalid location payload'));
+        return;
+      }
+
+      const point = {
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
+        accuracy: parsed.data.accuracy ?? null,
+        speed: parsed.data.speed ?? null,
+        heading: parsed.data.heading ?? null,
+        battery: parsed.data.battery ?? null,
+        recordedAt: coerceRecordedAt(parsed.data.recordedAt),
+      };
+
+      const session = await recordLocation(user.id, sosId, point);
+      if (!session) {
+        next(HttpError.notFound('NOT_FOUND', 'sos session not found'));
+        return;
+      }
+
+      emitSosLocation({
+        sosId,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        accuracy: point.accuracy,
+        speed: point.speed,
+        heading: point.heading,
+        battery: point.battery,
+        recordedAt: point.recordedAt.toISOString(),
+      });
+
+      res.status(204).end();
     } catch (err) {
       next(err);
     }
