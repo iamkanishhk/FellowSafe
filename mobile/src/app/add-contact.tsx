@@ -29,12 +29,19 @@ import { toE164 } from "../lib/phone";
 import { saveContactsCache } from "../lib/contacts-cache";
 import { formatPhone } from "../lib/user-context";
 
-const BLUE = "#2E7CF6";
-const NAVY = "#13203A";
-const GREY = "#6B778D";
-const GREEN = "#3BB57C";
-const GREEN_TINT = "#E7F6EF";
-const FIELD_BORDER = "#E1E8F2";
+// Native iOS Color Palette
+const COLORS = {
+  background: "#F2F2F7", // iOS Grouped Background
+  cardBackground: "#FFFFFF",
+  textPrimary: "#000000",
+  textSecondary: "#8C8C92",
+  separator: "#E5E5EA",
+  systemBlue: "#007AFF",
+  systemGreen: "#34C759",
+  systemRed: "#FF3B30",
+  greenTint: "#EAF9EE",
+  avatarFallback: "#E5E5EA",
+};
 
 const MATCH_BATCH_SIZE = 500;
 
@@ -71,6 +78,7 @@ function ContactRow({
   removing,
   onPress,
   onRemove,
+  showDivider = true,
 }: {
   contact: DeviceContact;
   matched: boolean;
@@ -79,52 +87,63 @@ function ContactRow({
   removing?: boolean;
   onPress: () => void;
   onRemove?: () => void;
+  showDivider?: boolean;
 }) {
   return (
-    <Pressable
-      style={[styles.row, added && styles.rowTrusted]}
-      onPress={onPress}
-      disabled={adding || removing || (added && !onRemove)}
-      accessibilityRole="button"
-    >
-      <View style={[styles.avatar, added && styles.avatarTrusted]}>
-        <Text style={[styles.avatarText, added && styles.avatarTextTrusted]}>
-          {initialsOf(contact.name)}
-        </Text>
-      </View>
-      <View style={styles.rowBody}>
-        <Text style={styles.rowName} numberOfLines={1}>
-          {contact.name}
-        </Text>
-        <Text style={styles.rowPhone} numberOfLines={1}>
-          {contact.phoneRaw}
-        </Text>
-      </View>
-      {adding || removing ? (
-        <ActivityIndicator color={BLUE} />
-      ) : added && onRemove ? (
-        <Pressable
-          onPress={onRemove}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={`Remove ${contact.name} from trusted contacts`}
-          style={({ pressed }) => [styles.removeBtn, pressed && styles.removeBtnPressed]}
-        >
-          <Text style={styles.removeText}>Remove</Text>
-        </Pressable>
-      ) : added ? (
-        <View style={styles.checkBadge}>
-          <Text style={styles.checkBadgeGlyph}>✓</Text>
+    <>
+      <Pressable
+        style={({ pressed }) => [
+          styles.row,
+          pressed && styles.rowPressed,
+        ]}
+        onPress={onPress}
+        disabled={adding || removing || (added && !onRemove)}
+        accessibilityRole="button"
+      >
+        <View style={[styles.avatar, added && styles.avatarTrusted]}>
+          <Text style={[styles.avatarText, added && styles.avatarTextTrusted]}>
+            {initialsOf(contact.name)}
+          </Text>
         </View>
-      ) : matched ? (
-        <View style={styles.badge}>
-          <View style={styles.badgeDot} />
-          <Text style={styles.badgeText}>On app</Text>
+
+        <View style={styles.rowBody}>
+          <Text style={styles.rowName} numberOfLines={1}>
+            {contact.name}
+          </Text>
+          <Text style={styles.rowPhone} numberOfLines={1}>
+            {contact.phoneRaw}
+          </Text>
         </View>
-      ) : (
-        <Text style={styles.rowAdd}>Add</Text>
-      )}
-    </Pressable>
+
+        {adding || removing ? (
+          <ActivityIndicator color={COLORS.systemBlue} size="small" />
+        ) : added && onRemove ? (
+          <Pressable
+            onPress={onRemove}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${contact.name} from trusted contacts`}
+            style={({ pressed }) => [styles.removeBtn, pressed && styles.btnPressed]}
+          >
+            <Text style={styles.removeText}>Remove</Text>
+          </Pressable>
+        ) : added ? (
+          <View style={styles.checkBadge}>
+            <Text style={styles.checkBadgeGlyph}>✓</Text>
+          </View>
+        ) : matched ? (
+          <View style={styles.badge}>
+            <View style={styles.badgeDot} />
+            <Text style={styles.badgeText}>On app</Text>
+          </View>
+        ) : (
+          <View style={styles.addBtn}>
+            <Text style={styles.rowAdd}>Add</Text>
+          </View>
+        )}
+      </Pressable>
+      {showDivider && <View style={styles.divider} />}
+    </>
   );
 }
 
@@ -145,7 +164,7 @@ export default function AddContact() {
     try {
       setTrusted(await listContacts());
     } catch {
-      // The trusted list is additive; keep the device list usable if it fails.
+      // Best-effort
     }
   }, [listContacts]);
 
@@ -274,11 +293,10 @@ export default function AddContact() {
       try {
         await removeContact(contact.id);
         setTrusted((prev) => prev.filter((c) => c.id !== contact.id));
-        // Refresh the offline snapshot so a removed contact is never texted.
         try {
           await saveContactsCache(await listContacts());
         } catch {
-          // Cache refresh is best-effort; the server is the source of truth.
+          // Best-effort
         }
       } catch (err) {
         Alert.alert(
@@ -321,37 +339,39 @@ export default function AddContact() {
         <View style={styles.header}>
           <Text style={styles.title}>Add Trusted Contact</Text>
           <Text style={styles.subtitle}>
-            Pick someone on Fellow Safe to receive an alert when you activate your
-            alarm.
+            Pick someone on Fellow Safe to receive an alert when you activate your alarm.
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Trusted contacts</Text>
-        {trusted.length === 0 ? (
-          <Text style={styles.sectionEmpty}>
-            No trusted contacts yet — add one from the list below.
-          </Text>
-        ) : (
-          trusted.map((c) => (
-            <ContactRow
-              key={c.id}
-              contact={{
-                id: `trusted:${c.id}`,
-                name: c.name,
-                phoneE164: c.phoneE164,
-                phoneRaw: formatPhone(c.phoneE164) ?? c.phoneE164,
-              }}
-              matched={false}
-              added
-              adding={false}
-              removing={removingId === c.id}
-              onPress={() => {}}
-              onRemove={() => onRemove(c)}
-            />
-          ))
-        )}
+        <Text style={styles.sectionHeader}>TRUSTED CONTACTS</Text>
+        <View style={styles.group}>
+          {trusted.length === 0 ? (
+            <Text style={styles.sectionEmpty}>
+              No trusted contacts yet — pick someone from your contacts below.
+            </Text>
+          ) : (
+            trusted.map((c, index) => (
+              <ContactRow
+                key={c.id}
+                contact={{
+                  id: `trusted:${c.id}`,
+                  name: c.name,
+                  phoneE164: c.phoneE164,
+                  phoneRaw: formatPhone(c.phoneE164) ?? c.phoneE164,
+                }}
+                matched={false}
+                added
+                adding={false}
+                removing={removingId === c.id}
+                onPress={() => {}}
+                onRemove={() => onRemove(c)}
+                showDivider={index < trusted.length - 1}
+              />
+            ))
+          )}
+        </View>
 
-        <Text style={styles.sectionTitle}>All contacts</Text>
+        <Text style={styles.sectionHeader}>ALL CONTACTS</Text>
       </View>
     ),
     [onRemove, removingId, trusted],
@@ -359,10 +379,10 @@ export default function AddContact() {
 
   if (permission === "loading") {
     return (
-      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar style="dark" />
         <View style={styles.centered}>
-          <ActivityIndicator color={BLUE} size="large" />
+          <ActivityIndicator color={COLORS.systemBlue} size="large" />
         </View>
       </SafeAreaView>
     );
@@ -370,19 +390,22 @@ export default function AddContact() {
 
   if (permission !== "granted") {
     return (
-      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar style="dark" />
-        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Text style={styles.backArrow}>←</Text>
-        </Pressable>
+        <View style={styles.navBar}>
+          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+            <Text style={styles.backArrow}>‹</Text>
+            <Text style={styles.backLabel}>Back</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.gate}>
           <View style={styles.gateIcon}>
             <Text style={styles.gateGlyph}>👥</Text>
           </View>
-          <Text style={styles.gateTitle}>Find your trusted contacts</Text>
+          <Text style={styles.gateTitle}>Find Your Trusted Contacts</Text>
           <Text style={styles.gateSub}>
-            Allow access to your contacts so we can show who is already on Fellow
-            Safe. Your contacts stay on your device.
+            Allow access to your contacts so we can show who is already on Fellow Safe. Your contacts stay on your device.
           </Text>
           {permission === "denied" && !canAskAgain ? (
             <Pressable style={styles.primaryBtn} onPress={() => Linking.openSettings()}>
@@ -390,7 +413,7 @@ export default function AddContact() {
             </Pressable>
           ) : (
             <Pressable style={styles.primaryBtn} onPress={requestAccess}>
-              <Text style={styles.primaryText}>Allow access</Text>
+              <Text style={styles.primaryText}>Allow Access</Text>
             </Pressable>
           )}
         </View>
@@ -399,15 +422,20 @@ export default function AddContact() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar style="dark" />
-      <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-        <Text style={styles.backArrow}>←</Text>
-      </Pressable>
+      
+      {/* iOS Top Navigation Bar */}
+      <View style={styles.navBar}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+          <Text style={styles.backArrow}>‹</Text>
+          <Text style={styles.backLabel}>Settings</Text>
+        </Pressable>
+      </View>
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={BLUE} size="large" />
+          <ActivityIndicator color={COLORS.systemBlue} size="large" />
           <Text style={styles.loadingText}>Reading your contacts…</Text>
         </View>
       ) : (
@@ -418,37 +446,41 @@ export default function AddContact() {
             ListHeaderComponent={listHeader}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>No contacts with phone numbers</Text>
+                <Text style={styles.emptyTitle}>No contacts found</Text>
                 <Text style={styles.emptySub}>
-                  Add a number to a device contact, then try again.
+                  Add a phone number to a device contact, then try again.
                 </Text>
               </View>
             }
-            renderItem={({ item }) => (
-              <ContactRow
-                contact={item}
-                matched={item.phoneE164 in matchedPhones}
-                added={trustedPhones.has(item.phoneE164)}
-                adding={addingId === item.id}
-                onPress={() => onPick(item)}
-              />
+            renderItem={({ item, index }) => (
+              <View style={index === 0 ? styles.groupTop : index === contacts.length - 1 ? styles.groupBottom : styles.groupMiddle}>
+                <ContactRow
+                  contact={item}
+                  matched={item.phoneE164 in matchedPhones}
+                  added={trustedPhones.has(item.phoneE164)}
+                  adding={addingId === item.id}
+                  onPress={() => onPick(item)}
+                  showDivider={index < contacts.length - 1}
+                />
+              </View>
             )}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
+
           <View style={styles.footer}>
             <Pressable
-              style={styles.primaryBtn}
+              style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
               onPress={() => setSheetOpen(true)}
               accessibilityRole="button"
             >
-              <Text style={styles.primaryText}>+ Add more contacts</Text>
+              <Text style={styles.primaryText}>Browse All Contacts</Text>
             </Pressable>
           </View>
         </>
       )}
 
+      {/* iOS Sheet Modal */}
       <Modal
         visible={sheetOpen}
         transparent
@@ -460,27 +492,30 @@ export default function AddContact() {
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>All contacts</Text>
-              <Pressable onPress={() => setSheetOpen(false)} hitSlop={10}>
+              <Text style={styles.sheetTitle}>Select Contact</Text>
+              <Pressable onPress={() => setSheetOpen(false)} hitSlop={10} style={styles.sheetCloseBtn}>
                 <Text style={styles.sheetClose}>✕</Text>
               </Pressable>
             </View>
-            <FlatList
-              data={contacts}
-              keyExtractor={(item) => `sheet:${item.id}`}
-              renderItem={({ item }) => (
-                <ContactRow
-                  contact={item}
-                  matched={item.phoneE164 in matchedPhones}
-                  added={trustedPhones.has(item.phoneE164)}
-                  adding={addingId === item.id}
-                  onPress={() => onPick(item)}
-                />
-              )}
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-              contentContainerStyle={styles.sheetListContent}
-              showsVerticalScrollIndicator={false}
-            />
+            
+            <View style={styles.sheetGroup}>
+              <FlatList
+                data={contacts}
+                keyExtractor={(item) => `sheet:${item.id}`}
+                renderItem={({ item, index }) => (
+                  <ContactRow
+                    contact={item}
+                    matched={item.phoneE164 in matchedPhones}
+                    added={trustedPhones.has(item.phoneE164)}
+                    adding={addingId === item.id}
+                    onPress={() => onPick(item)}
+                    showDivider={index < contacts.length - 1}
+                  />
+                )}
+                contentContainerStyle={styles.sheetListContent}
+                showsVerticalScrollIndicator={false}
+              />
+            </View>
           </View>
         </View>
       </Modal>
@@ -491,240 +526,277 @@ export default function AddContact() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    backgroundColor: COLORS.background,
+  },
+  navBar: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
   },
   backBtn: {
-    width: 30,
-    height: 30,
-    justifyContent: "center",
-    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
   },
   backArrow: {
-    fontSize: 22,
-    color: NAVY,
-    fontWeight: "600",
-    marginTop: -3,
+    fontSize: 28,
+    color: COLORS.systemBlue,
+    fontWeight: "300",
+    marginTop: -2,
+  },
+  backLabel: {
+    fontSize: 17,
+    color: COLORS.systemBlue,
+    marginLeft: 2,
+    letterSpacing: -0.4,
   },
   header: {
-    marginBottom: 4,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 21,
-    fontWeight: "800",
-    color: NAVY,
-    letterSpacing: -0.2,
+    fontSize: 34,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+    letterSpacing: -0.4,
   },
   subtitle: {
     marginTop: 6,
-    fontSize: 13,
-    lineHeight: 18,
-    color: GREY,
+    fontSize: 14,
+    lineHeight: 19,
+    color: COLORS.textSecondary,
+    letterSpacing: -0.1,
   },
-  sectionTitle: {
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: "400",
+    color: COLORS.textSecondary,
     marginTop: 18,
-    marginBottom: 8,
-    fontSize: 12.5,
-    fontWeight: "800",
-    color: GREY,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
+    marginBottom: 6,
+    marginLeft: 16,
+    letterSpacing: -0.08,
+  },
+  group: {
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    overflow: "hidden",
+  },
+  groupTop: {
+    backgroundColor: COLORS.cardBackground,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    marginHorizontal: 16,
+    overflow: "hidden",
+  },
+  groupMiddle: {
+    backgroundColor: COLORS.cardBackground,
+    marginHorizontal: 16,
+    overflow: "hidden",
+  },
+  groupBottom: {
+    backgroundColor: COLORS.cardBackground,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    marginHorizontal: 16,
+    overflow: "hidden",
   },
   sectionEmpty: {
-    fontSize: 13,
-    color: GREY,
-    paddingVertical: 4,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    padding: 16,
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    paddingBottom: 60,
   },
   loadingText: {
-    fontSize: 13,
-    color: GREY,
+    fontSize: 15,
+    color: COLORS.textSecondary,
   },
   emptyWrap: {
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     paddingVertical: 32,
+    marginHorizontal: 16,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 12,
   },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: NAVY,
-    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
   },
   emptySub: {
     fontSize: 13,
-    color: GREY,
+    color: COLORS.textSecondary,
     textAlign: "center",
     paddingHorizontal: 24,
   },
   listContent: {
-    paddingBottom: 8,
+    paddingBottom: 24,
   },
-  separator: {
-    height: 1,
-    backgroundColor: FIELD_BORDER,
-    marginLeft: 60,
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.separator,
+    marginLeft: 62,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    marginHorizontal: -10,
-    borderRadius: 12,
-    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minHeight: 52,
+    backgroundColor: COLORS.cardBackground,
   },
-  rowTrusted: {
-    backgroundColor: GREEN_TINT,
+  rowPressed: {
+    backgroundColor: "#E5E5EA",
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#E4EBFE",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: COLORS.avatarFallback,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarTrusted: {
-    backgroundColor: "#CDEBDC",
+    backgroundColor: COLORS.greenTint,
   },
   avatarText: {
     fontSize: 15,
-    fontWeight: "800",
-    color: BLUE,
+    fontWeight: "600",
+    color: COLORS.textSecondary,
   },
   avatarTextTrusted: {
-    color: GREEN,
+    color: COLORS.systemGreen,
   },
   rowBody: {
     flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
   },
   rowName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: NAVY,
+    fontSize: 17,
+    fontWeight: "400",
+    color: COLORS.textPrimary,
+    letterSpacing: -0.4,
   },
   rowPhone: {
-    fontSize: 12.5,
-    color: GREY,
-    marginTop: 2,
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 1,
+  },
+  addBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: "#EBF3FF",
   },
   rowAdd: {
-    fontSize: 13.5,
-    fontWeight: "700",
-    color: BLUE,
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORS.systemBlue,
   },
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    backgroundColor: GREEN_TINT,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 4,
+    backgroundColor: COLORS.greenTint,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   badgeDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: GREEN,
+    backgroundColor: COLORS.systemGreen,
   },
   badgeText: {
-    fontSize: 11.5,
-    fontWeight: "700",
-    color: GREEN,
+    fontSize: 12,
+    fontWeight: "600",
+    color: COLORS.systemGreen,
   },
   checkBadge: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: GREEN,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.systemGreen,
     alignItems: "center",
     justifyContent: "center",
   },
   checkBadgeGlyph: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-    marginTop: -2,
+    fontSize: 13,
+    fontWeight: "700",
   },
   removeBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#F0C7C7",
-    backgroundColor: "#FDF2F2",
-  },
-  removeBtnPressed: {
-    opacity: 0.6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#FEE2E2",
   },
   removeText: {
-    fontSize: 12.5,
-    fontWeight: "700",
-    color: "#D14343",
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.systemRed,
   },
   gate: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: 60,
+    paddingHorizontal: 32,
     gap: 12,
   },
   gateIcon: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: "#E4EBFE",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#EBF3FF",
     alignItems: "center",
     justifyContent: "center",
   },
   gateGlyph: {
-    fontSize: 34,
+    fontSize: 36,
   },
   gateTitle: {
-    marginTop: 6,
-    fontSize: 18,
-    fontWeight: "800",
-    color: NAVY,
+    fontSize: 22,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
     textAlign: "center",
+    letterSpacing: -0.4,
   },
   gateSub: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: GREY,
+    fontSize: 15,
+    lineHeight: 20,
+    color: COLORS.textSecondary,
     textAlign: "center",
-    paddingHorizontal: 16,
   },
   footer: {
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: COLORS.background,
   },
   primaryBtn: {
-    marginTop: 6,
     width: "100%",
     height: 50,
     borderRadius: 12,
-    backgroundColor: BLUE,
+    backgroundColor: COLORS.systemBlue,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: BLUE,
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+  },
+  btnPressed: {
+    opacity: 0.8,
   },
   primaryText: {
     color: "#FFFFFF",
-    fontSize: 14.5,
-    fontWeight: "700",
+    fontSize: 17,
+    fontWeight: "600",
+    letterSpacing: -0.4,
   },
   sheetWrap: {
     flex: 1,
@@ -736,42 +808,56 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: "rgba(16, 24, 40, 0.45)",
+    backgroundColor: "rgba(0,0,0,0.4)",
   },
   sheet: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 8,
     paddingBottom: 24,
-    maxHeight: "82%",
+    maxHeight: "85%",
   },
   sheetHandle: {
     alignSelf: "center",
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#D8DFEA",
-    marginBottom: 12,
+    width: 36,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#C7C7CC",
+    marginBottom: 8,
   },
   sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
   sheetTitle: {
     fontSize: 17,
-    fontWeight: "800",
-    color: NAVY,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+  },
+  sheetCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#E5E5EA",
+    alignItems: "center",
+    justifyContent: "center",
   },
   sheetClose: {
-    fontSize: 18,
-    color: GREY,
+    fontSize: 12,
+    color: COLORS.textSecondary,
     fontWeight: "700",
   },
+  sheetGroup: {
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    overflow: "hidden",
+  },
   sheetListContent: {
-    paddingBottom: 12,
+    paddingBottom: 16,
   },
 });

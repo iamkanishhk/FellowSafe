@@ -1,5 +1,12 @@
-import { useState } from "react";
-import { Text, View, StyleSheet, Pressable, ScrollView } from "react-native";
+import React, { useState } from "react";
+import {
+  Text,
+  View,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
@@ -8,52 +15,69 @@ import { useClerk } from "@clerk/expo";
 import Navbar from "../components/Navbar";
 import { useCurrentUser } from "../lib/user-context";
 
-const NAVY = "#13203A";
-const GREY = "#6B778D";
-const BLUE = "#2E7CF6";
-const DANGER = "#E5484D";
-const FIELD_BORDER = "#E1E8F2";
-const HIGHLIGHT_BG = "#EAF1FE";
+// Native iOS Color Palette
+const COLORS = {
+  background: "#F2F2F7", // iOS Grouped Background
+  cardBackground: "#FFFFFF",
+  textPrimary: "#000000",
+  textSecondary: "#8C8C92",
+  separator: "#E5E5EA",
+  chevron: "#C7C7CC",
+  systemBlue: "#007AFF",
+  systemRed: "#FF3B30",
+};
 
-function Row({
-  icon,
-  label,
-  highlighted = false,
-  danger = false,
-  onPress,
-}: {
-  icon: string;
+interface RowProps {
+  iconText: string;
+  iconBgColor?: string;
   label: string;
-  highlighted?: boolean;
+  value?: string;
   danger?: boolean;
   onPress?: () => void;
-}) {
+  showDivider?: boolean;
+  loading?: boolean;
+}
+
+function Row({
+  iconText,
+  iconBgColor = COLORS.systemBlue,
+  label,
+  value,
+  danger = false,
+  onPress,
+  showDivider = true,
+  loading = false,
+}: RowProps) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.row, highlighted && styles.rowHighlighted]}
-    >
-      <Text
-        style={[
-          styles.rowIcon,
-          highlighted && { color: BLUE },
-          danger && { color: DANGER },
+    <>
+      <Pressable
+        onPress={onPress}
+        disabled={loading}
+        style={({ pressed }) => [
+          styles.row,
+          pressed && styles.rowPressed,
         ]}
       >
-        {icon}
-      </Text>
-      <Text
-        style={[
-          styles.rowLabel,
-          highlighted && { color: BLUE },
-          danger && { color: DANGER },
-        ]}
-      >
-        {label}
-      </Text>
-      <View style={{ flex: 1 }} />
-      <Text style={styles.rowChevron}>›</Text>
-    </Pressable>
+        <View style={[styles.iconContainer, { backgroundColor: danger ? COLORS.systemRed : iconBgColor }]}>
+          <Text style={styles.iconSymbol}>{iconText}</Text>
+        </View>
+
+        <Text style={[styles.rowLabel, danger && styles.dangerLabel]}>
+          {label}
+        </Text>
+
+        <View style={styles.spacer} />
+
+        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+
+        {loading ? (
+          <ActivityIndicator size="small" color={COLORS.textSecondary} />
+        ) : (
+          <Text style={styles.chevron}>›</Text>
+        )}
+      </Pressable>
+      {showDivider && <View style={styles.divider} />}
+    </>
   );
 }
 
@@ -67,85 +91,123 @@ export default function Settings() {
     setLoggingOut(true);
     try {
       await signOut();
-    } finally {
       router.replace("/sign-in");
+    } catch {
+      setLoggingOut(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar style="dark" />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 130 }}
+        contentContainerStyle={styles.scrollContent}
       >
-
-        <Text style={styles.title}>Settings</Text>
-
-        <View style={styles.profileCard}>
-          {imageUrl ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={styles.avatar}
-              contentFit="cover"
-              transition={150}
-            />
-          ) : (
-            <View style={styles.avatar}>
-              <Text style={styles.avatarInitials}>{initials}</Text>
-            </View>
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={styles.profileName} numberOfLines={1}>
-              {fullName}
-            </Text>
-            {email ? (
-              <Text style={styles.profileContact} numberOfLines={1}>
-                {email}
-              </Text>
-            ) : null}
-            <Text style={styles.profileContact}>
-              {phone ?? "Add phone number"}
-            </Text>
-          </View>
-          <Text style={styles.rowChevron}>›</Text>
+        {/* iOS Large Title Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Settings</Text>
         </View>
 
-        <Text style={styles.sectionLabel}>Safety</Text>
+        {/* Apple ID Style Profile Section */}
+        <View style={styles.group}>
+          <Pressable
+            onPress={() => router.push("/add-contact")}
+            style={({ pressed }) => [
+              styles.profileCard,
+              pressed && styles.rowPressed,
+            ]}
+          >
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={styles.avatar}
+                contentFit="cover"
+                transition={150}
+              />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitials}>{initials ?? "U"}</Text>
+              </View>
+            )}
+
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {fullName || "User Name"}
+              </Text>
+              <Text style={styles.profileContact} numberOfLines={1}>
+                {email || phone || "Apple ID, iCloud, & More"}
+              </Text>
+            </View>
+
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+        </View>
+
+        {/* Safety Section */}
+        <Text style={styles.sectionHeader}>SAFETY</Text>
         <View style={styles.group}>
           <Row
-            icon="◯"
+            iconText="👥"
+            iconBgColor="#007AFF"
             label="Trusted Contacts"
-            highlighted
             onPress={() => router.push("/add-contact")}
           />
-          <View style={styles.divider} />
-          <Row icon="🔔" label="Alarm Settings" />
-          <View style={styles.divider} />
-          <Row icon="📍" label="Location Sharing" />
-          <View style={styles.divider} />
-          <Row icon="🛡" label="Emergency Preferences" />
-        </View>
-
-        <Text style={styles.sectionLabel}>Account</Text>
-        <View style={styles.group}>
-          <Row icon="◯" label="Personal Information" />
-          <View style={styles.divider} />
-          <Row icon="🔔" label="Notifications" />
-          <View style={styles.divider} />
-          <Row icon="🛡" label="Privacy & Security" />
-          <View style={styles.divider} />
           <Row
-            icon="⏻"
-            label={loggingOut ? "Logging out…" : "Log out"}
-            danger
-            onPress={handleLogout}
+            iconText="⏰"
+            iconBgColor="#FF9500"
+            label="Alarm Settings"
+          />
+          <Row
+            iconText="📍"
+            iconBgColor="#34C759"
+            label="Location Sharing"
+          />
+          <Row
+            iconText="🛡️"
+            iconBgColor="#AF52DE"
+            label="Emergency Preferences"
+            showDivider={false}
           />
         </View>
 
-        <Text style={styles.sectionLabel}>Support</Text>
+        {/* Account Section */}
+        <Text style={styles.sectionHeader}>ACCOUNT</Text>
         <View style={styles.group}>
-          <Row icon="ⓘ" label="Help & Support" />
+          <Row
+            iconText="👤"
+            iconBgColor="#5856D6"
+            label="Personal Information"
+          />
+          <Row
+            iconText="🔔"
+            iconBgColor="#FF3B30"
+            label="Notifications"
+          />
+          <Row
+            iconText="🔒"
+            iconBgColor="#8E8E93"
+            label="Privacy & Security"
+          />
+          <Row
+            iconText="⏻"
+            label={loggingOut ? "Logging out..." : "Log Out"}
+            danger
+            loading={loggingOut}
+            onPress={handleLogout}
+            showDivider={false}
+          />
+        </View>
+
+        {/* Support Section */}
+        <Text style={styles.sectionHeader}>SUPPORT</Text>
+        <View style={styles.group}>
+          <Row
+            iconText="ℹ️"
+            iconBgColor="#64D2FF"
+            label="Help & Support"
+            showDivider={false}
+          />
         </View>
       </ScrollView>
 
@@ -157,141 +219,122 @@ export default function Settings() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    backgroundColor: COLORS.background,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 110,
+  },
+  header: {
+    marginTop: 12,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   title: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: NAVY,
-    letterSpacing: -0.2,
+    fontSize: 34,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+    letterSpacing: -0.4,
+  },
+  group: {
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: "400",
+    color: COLORS.textSecondary,
+    marginTop: 22,
+    marginBottom: 6,
+    marginLeft: 12,
+    letterSpacing: -0.08,
   },
   profileCard: {
-    marginTop: 12,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderWidth: 1.2,
-    borderColor: FIELD_BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: "#FFFFFF",
+    padding: 12,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#E4EBFE",
-    overflow: "hidden",
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  avatarFallback: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#E5E5EA",
     alignItems: "center",
     justifyContent: "center",
   },
   avatarInitials: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#2C4A73",
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#8E8E93",
+  },
+  profileInfo: {
+    flex: 1,
+    marginLeft: 14,
+    marginRight: 8,
   },
   profileName: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: NAVY,
+    fontSize: 19,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+    letterSpacing: -0.3,
   },
   profileContact: {
-    fontSize: 12.5,
-    color: GREY,
-    marginTop: 1,
-  },
-  sectionLabel: {
-    marginTop: 16,
-    fontSize: 14,
-    fontWeight: "800",
-    color: NAVY,
-    marginBottom: 8,
-  },
-  group: {
-    borderWidth: 1.2,
-    borderColor: FIELD_BORDER,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    overflow: "hidden",
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    minHeight: 44,
   },
-  rowHighlighted: {
-    backgroundColor: HIGHLIGHT_BG,
+  rowPressed: {
+    backgroundColor: "#E5E5EA",
   },
-  rowIcon: {
-    fontSize: 17,
-    color: "#2C4A73",
-    width: 22,
-    textAlign: "center",
-  },
-  rowLabel: {
-    fontSize: 13.5,
-    fontWeight: "500",
-    color: "#2B3852",
-  },
-  rowChevron: {
-    fontSize: 20,
-    color: "#9AA5B8",
-    fontWeight: "400",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#EDF1F7",
-    marginLeft: 46,
-  },
-  tabBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    borderWidth: 1.2,
-    borderColor: FIELD_BORDER,
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: "#FFFFFF",
-    marginBottom: 10,
-    marginTop: 8,
-    shadowColor: "#B9C4D6",
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  tabItem: {
-    alignItems: "center",
-    minWidth: 64,
-  },
-  tabIcon: {
-    fontSize: 26,
-    fontWeight: "700",
-    lineHeight: 28,
-  },
-  tabLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 1,
-  },
-  tabFab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "#2C4A73",
+  iconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
   },
-  tabPlus: {
-    color: "#FFFFFF",
-    fontSize: 26,
+  iconSymbol: {
+    fontSize: 14,
+  },
+  rowLabel: {
+    fontSize: 17,
     fontWeight: "400",
-    marginTop: -2,
+    color: COLORS.textPrimary,
+    letterSpacing: -0.4,
+  },
+  dangerLabel: {
+    color: COLORS.systemRed,
+  },
+  rowValue: {
+    fontSize: 17,
+    color: COLORS.textSecondary,
+    marginRight: 6,
+  },
+  chevron: {
+    fontSize: 20,
+    color: COLORS.chevron,
+    fontWeight: "500",
+  },
+  spacer: {
+    flex: 1,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: COLORS.separator,
+    marginLeft: 52,
   },
 });
